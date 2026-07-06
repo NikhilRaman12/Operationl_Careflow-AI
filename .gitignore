@@ -1,3 +1,16 @@
 .env
 __pycache__/
 .DS_Store
+.venv/
+data/cache/
+outputs/
+*.parquet
+*.csv
+logs/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+frontend/.env
+backend/.env

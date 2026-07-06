@@ -1,11 +1,17 @@
 [project]
 name = "operational_careflow_ai___intelligence_layer"
 version = "0.1.0"
-description = "operational_careflow_ai___intelligence_layer using crewAI"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "GPU-accelerated CareFlow AI using CrewAI"
+authors = [{ name = "Nikhil Raman K", email = "nikhilramank@gmail.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "crewai[file-processing,litellm,tools]==1.15.0",
+    "requests",
+    "pandas",
+    "python-dotenv",
+    "pydantic",
+    "fastapi",
+    "uvicorn[standard]",
 ]
 
 [project.scripts]
@@ -14,7 +20,6 @@ run_crew = "operational_careflow_ai___intelligence_layer.main:run"
 train = "operational_careflow_ai___intelligence_layer.main:train"
 replay = "operational_careflow_ai___intelligence_layer.main:replay"
 test = "operational_careflow_ai___intelligence_layer.main:test"
-run_with_trigger = "operational_careflow_ai___intelligence_layer.main:run_with_trigger"
 
 [build-system]
 requires = ["hatchling"]

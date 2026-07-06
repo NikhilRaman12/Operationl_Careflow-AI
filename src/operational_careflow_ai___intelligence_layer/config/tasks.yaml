@@ -1,303 +1,41 @@
 ---
 fetch_live_google_covid_epidemiology_and_hospitalization_data:
   description: |-
-    Fetch real COVID-19 epidemiological and hospitalization data from the Google COVID-19 Open Data public GCS endpoints for location key: {location_key} (default: "US" if not provided).
-
-    STEP 1 — FETCH EPIDEMIOLOGY DATA:
-    Use the GoogleCovidEpidemiologyTool with:
-    - location_key: {location_key}
-    - use_latest: false
-    - tail_days: 60
-
-    Extract from the response:
-    - Date range of available data
-    - Total cumulative confirmed cases
-    - Total cumulative deaths
-    - Total cumulative recoveries
-    - Recent 60-day trend in new_confirmed cases (increasing, stable, or decreasing)
-    - Recent 60-day trend in new_deceased
-
-    STEP 2 — FETCH HOSPITALIZATION DATA:
-    Use the GoogleCovidHospitalizationsTool with:
-    - location_key: {location_key}
-    - use_latest: false
-    - tail_days: 60
-
-    Extract from the response:
-    - Latest current_hospitalized_patients (maps to total bed pressure)
-    - Latest current_intensive_care_patients (maps to ICU load)
-    - Latest current_ventilator_patients (maps to ventilator utilization)
-    - Peak values for each of the above over the 60-day window
-    - Trend direction for hospitalizations (compare latest vs 30 days prior)
-
-    STEP 3 — SYNTHESIZE:
-    Produce a clean contextual summary combining both datasets. Compute:
-    - Case fatality rate: cumulative_deceased / cumulative_confirmed x 100
-    - Hospitalization rate trend: are hospitalizations rising, stable, or falling?
-    - ICU pressure level: classify as LOW (<30% of peak), MODERATE (30-60%), HIGH (>60%), or UNKNOWN if peak data unavailable
-    - Ventilator pressure level: same classification
-
-    IMPORTANT DATA NOTE: Always include this note in your output:
-    "Google COVID-19 Open Data was archived November 2024 and covers data through September 2022. This data provides historical epidemiological context and real hospitalization benchmarks for the CareFlow AI pipeline. It is not a real-time live feed."
-
-    If either tool returns an ERROR status, document the error clearly and proceed with whatever data was successfully retrieved. Do not block the pipeline.
+    Fetch Google COVID-19 Open Data epidemiology and hospitalization context for location key {location_key}. Call GoogleCovidBulkDataTool first with dataset="combined" so the pipeline can compute real KPIs such as cumulative cases, cumulative deaths, CFR, latest hospitalized, latest ICU, latest ventilator, peak hospitalized, peak ICU, peak ventilator, and 7-day/14-day trends. Use the existing epidemiology and hospitalization tools only as fallbacks or for additional detail. Keep the delivery population-level and clearly note that Google COVID Open Data is historical and not a real-time clinical feed.
   expected_output: |-
-    A structured JSON-compatible Google COVID Data Context report containing:
-    - fetch_status (SUCCESS, PARTIAL, or FAILED)
-    - location_key (the location fetched)
-    - data_coverage_note (the mandatory archive notice)
-    - epidemiology_summary:
-        - date_range (earliest and latest dates available)
-        - cumulative_confirmed (integer)
-        - cumulative_deceased (integer)
-        - cumulative_recovered (integer or null)
-        - case_fatality_rate_pct (float)
-        - recent_case_trend (INCREASING, STABLE, DECREASING, or UNKNOWN)
-        - recent_death_trend (INCREASING, STABLE, DECREASING, or UNKNOWN)
-        - records_analyzed (integer)
-    - hospitalization_summary:
-        - latest_hospitalized_patients (integer or null)
-        - latest_icu_patients (integer or null)
-        - latest_ventilator_patients (integer or null)
-        - peak_hospitalized_patients (integer or null)
-        - peak_icu_patients (integer or null)
-        - peak_ventilator_patients (integer or null)
-        - hospitalization_trend (INCREASING, STABLE, DECREASING, or UNKNOWN)
-        - icu_pressure_level (LOW, MODERATE, HIGH, or UNKNOWN)
-        - ventilator_pressure_level (LOW, MODERATE, HIGH, or UNKNOWN)
-    - careflow_context_for_downstream_agents (2-3 sentence plain-language summary of what this real data means for hospital operations planning)
-    - fetch_timestamp (ISO timestamp)
+    A structured JSON-compatible Google COVID Data Context report containing the bulk-data KPI payload and the archive notice.
   agent: google_covid_live_data_fetching_specialist
 ingest_and_validate_hospital_covid_operational_data:
   description: |-
-    Validate the available data sources for this pipeline run and produce a structured data foundation report.
-
-    DATA SOURCE PRIORITY:
-    This pipeline supports two data modes. Always attempt Mode A first, then fall back to Mode B.
-
-    MODE A — Patient-Level CSV (if {data_file_path} is a valid, accessible file path):
-    Use the FileReadTool to read {data_file_path}. If successful, perform:
-    1. SCHEMA VALIDATION: Check for fields: patient_id, age, gender, ward, admission_date, oxygen_saturation, respiratory_rate, comorbidity_count, symptom_severity_score, lab_crp, lab_dimer, lung_involvement_pct, icu_admitted, ventilator_required, oxygen_required, discharge_status, region, hospital_id.
-    2. MISSING VALUE ANALYSIS: Flag fields >10% missing as HIGH_CONCERN. Flag critical fields (oxygen_saturation, respiratory_rate, age) >20% missing as CRITICAL.
-    3. OUTLIER DETECTION: Flag oxygen_saturation outside 50-100, respiratory_rate outside 5-60, age outside 0-120.
-    4. DUPLICATE DETECTION: Check for duplicate patient_id values.
-    5. Set ingestion_status = SUCCESS or SUCCESS_WITH_WARNINGS and data_mode = PATIENT_LEVEL_CSV.
-
-    MODE B — Google COVID Open Data (when no valid file is provided or file is not accessible):
-    Use the Google COVID data already fetched by the live data agent in your context. Do NOT attempt to read any file.
-    Produce the data foundation report from the Google COVID epidemiology and hospitalization data:
-    - total_records = records_analyzed from the Google COVID epidemiology summary
-    - available_fields_for_downstream = ["date", "new_confirmed", "new_deceased", "cumulative_confirmed", "cumulative_deceased", "current_hospitalized_patients", "current_intensive_care_patients", "current_ventilator_patients"]
-    - data_quality_score = 92.0 (Google COVID Open Data is a curated public dataset)
-    - ingestion_status = SUCCESS_GOOGLE_COVID_MODE
-    - data_mode = GOOGLE_COVID_POPULATION_DATA
-    - notes = "No patient-level CSV provided. Pipeline running on Google COVID Open Data population benchmarks. Patient-level risk scoring will use population-level inference instead of individual records."
-
-    IMPORTANT: If the file path is empty, missing, a placeholder like 'data_file_path', or the FileReadTool returns an error — immediately switch to MODE B. Do not retry the file. Do not report FAILED. Proceed with Google COVID data.
+    Validate the available data sources for this pipeline run and produce a structured data foundation report. If a de-identified patient CSV is supplied through {data_file_path}, use it for patient-level validation. If not, stay in Google COVID population mode and do not fabricate patient-level values. The downstream risk scoring task must remain population-level and clearly marked as an estimate when no patient CSV is available.
   expected_output: |-
-    A structured JSON-compatible data foundation report containing:
-    - data_mode (PATIENT_LEVEL_CSV or GOOGLE_COVID_POPULATION_DATA)
-    - ingestion_status (SUCCESS, SUCCESS_WITH_WARNINGS, SUCCESS_GOOGLE_COVID_MODE, or FAILED)
-    - total_records (integer — patient count if CSV, or epidemiology records count if Google COVID mode)
-    - valid_records (integer)
-    - flagged_records (integer, 0 if Google COVID mode)
-    - data_quality_score (float 0-100)
-    - available_fields_for_downstream (list of confirmed available field names)
-    - field_availability (map of field name to availability status — use Google COVID fields if in Mode B)
-    - critical_warnings (list of warning strings, empty if data is clean)
-    - data_source_description (one sentence describing what data source was used)
-    - notes (any important limitations or observations for downstream agents)
+    A structured JSON-compatible data foundation report containing the active data mode and limitations.
   agent: hospital_data_ingestion_validation_specialist
   context:
   - fetch_live_google_covid_epidemiology_and_hospitalization_data
 gpu_accelerated_hospital_operations_analytics_and_eda:
   description: |-
-    Perform comprehensive operational analytics on the hospital COVID dataset. Your first step is to determine the data mode from the ingestion task output.
-
-    --- CHECK DATA MODE ---
-    Read the ingestion task output. If data_mode = "GOOGLE_COVID_POPULATION_DATA", follow MODE B. Otherwise follow MODE A.
-
-    === MODE A: PATIENT_CSV (individual patient records available) ===
-    Use the OperationalAnalyticsTool on {data_file_path} with capacity params:
-    total_icu_capacity={total_icu_capacity} (default 50), total_ventilators={total_ventilators} (default 20), total_bed_capacity={total_bed_capacity} (default 200).
-
-    Produce all 11 analytical sections from the tool output:
-    1. patient_volume, 2. severity_distribution, 3. icu_load, 4. ventilator_utilization,
-    5. oxygen_demand, 6. bed_occupancy, 7. regional_trends, 8. comorbidity_distribution,
-    9. age_group_distribution, 10. temporal_trend, 11. top_pressure_indicators.
-
-    Add google_covid_data_context benchmarking from the live data fetch task.
-    Add gpu_acceleration_notes for production cuDF equivalents.
-
-    === MODE B: GOOGLE_COVID_POPULATION_DATA (no patient CSV — Google COVID data only) ===
-    STRICT RULE: Only analyze fields confirmed present in the ingestion task field_availability. Do NOT fabricate ward names, region names, age distributions, comorbidity counts, or oxygen saturation breakdowns — these fields do not exist in Google COVID data.
-
-    Available fields will be a subset of: date, new_confirmed, new_deceased, cumulative_confirmed, cumulative_deceased, current_hospitalized_patients, current_intensive_care_patients, current_ventilator_patients.
-
-    From the Google COVID hospitalization records (passed via ingestion context), compute ONLY what the real data supports:
-
-    1. patient_volume:
-       - total_active = latest current_hospitalized_patients value
-       - Use date-sorted records to compute new_admissions_24h = latest new_confirmed value
-       - Compute 7-day new_confirmed sum for new_admissions_7d
-       - trend_direction: compare latest 7-day new_confirmed average vs prior 7 days
-
-    2. icu_load:
-       - icu_patient_count = latest current_intensive_care_patients
-       - total_icu_capacity = {total_icu_capacity} (default 50)
-       - occupancy_pct = icu_patient_count / total_icu_capacity * 100
-       - status = NORMAL if <70%, ELEVATED if 70-90%, CRITICAL if >90%
-
-    3. ventilator_utilization:
-       - ventilator_patient_count = latest current_ventilator_patients (null if unavailable)
-       - total_ventilators = {total_ventilators} (default 20)
-       - utilization_pct = if data available, else mark as UNKNOWN
-
-    4. bed_occupancy:
-       - total_admitted = latest current_hospitalized_patients
-       - total_capacity = {total_bed_capacity} (default 200)
-       - occupancy_pct = total_admitted / total_capacity * 100
-       - ward_breakdown = [] with note "Ward-level data unavailable in Google COVID dataset"
-
-    5. temporal_trend:
-       - Use new_confirmed daily values from the records to compute trend direction
-       - Show last 7 days of daily new_confirmed counts
-       - Compute 3-day rolling comparison to determine INCREASING / STABLE / DECREASING
-
-    6. top_pressure_indicators:
-       - Derive from ICU occupancy %, bed occupancy %, and ventilator utilization only
-       - Do NOT invent regional or ward-level pressure indicators
-
-    7. severity_distribution: Set to null with note "Oxygen saturation data not available in Google COVID dataset — requires patient-level CSV"
-    8. regional_trends: Set to null with note "Regional breakdown not available in Google COVID dataset"
-    9. comorbidity_distribution: Set to null with note "Comorbidity data not available in Google COVID dataset"
-    10. age_group_distribution: Set to null with note "Age data not available in Google COVID dataset"
-    11. oxygen_demand: Estimate from current_hospitalized_patients assuming ~30% require supplemental oxygen based on COVID hospitalization literature, clearly marked as ESTIMATED
-
-    google_covid_data_context: Add benchmarking note comparing current ICU/bed load to peak values from the live data fetch task.
-    gpu_acceleration_notes: List cuDF production equivalents for all operations performed.
-  expected_output: 'A structured JSON-compatible analytics summary. In MODE A: all
-    11 sections fully populated from real patient data. In MODE B: only sections computable
-    from Google COVID fields are populated with real values; all other sections explicitly
-    set to null with a data_unavailable_reason string. Must always include: data_mode,
-    patient_volume, icu_load, ventilator_utilization, bed_occupancy, temporal_trend,
-    top_pressure_indicators, google_covid_data_context, gpu_acceleration_notes, analytics_timestamp.
-    Must NEVER fabricate ward names, region names, age distributions, or comorbidity
-    data when in MODE B.'
+    Perform hospital operations analytics on the validated data. When running in Google COVID population mode, call GoogleCovidBulkDataTool and GPUBenchmarkTool to compute only the metrics supported by the available public fields and to report pandas versus optional cuDF/RAPIDS performance. Never fabricate ward names, age distributions, comorbidity distributions, or oxygen saturation breakdowns when those fields are absent. Include GPU acceleration notes describing the cuDF/RAPIDS equivalent for the analytics steps when available.
+  expected_output: |-
+    A structured JSON-compatible analytics summary that includes population-level figures only when supported by Google COVID data.
   agent: gpu_accelerated_hospital_operations_analytics_engineer
   context:
   - ingest_and_validate_hospital_covid_operational_data
   - fetch_live_google_covid_epidemiology_and_hospitalization_data
 patient_risk_scoring_and_severity_classification:
   description: |-
-    Score and classify patients using the CareFlow Risk Scoring Model. The scoring mode depends on the data_mode reported by the ingestion task.
-
-    CHECK DATA MODE FROM INGESTION TASK:
-
-    --- MODE A: PATIENT_LEVEL_CSV ---
-    If data_mode is PATIENT_LEVEL_CSV, individual patient records are available.
-    Apply the CareFlow Risk Scoring Model to each patient record using these dimensions:
-
-    1. OXYGEN SATURATION (0-30 pts): >94=0, 90-94=10, 85-90=20, <85=30
-    2. RESPIRATORY RATE (0-20 pts): <20=0, 20-25=8, 25-30=14, >30=20
-    3. AGE (0-15 pts): <40=0, 40-60=5, 60-75=10, >75=15
-    4. COMORBIDITIES (0-15 pts): 0=0, 1=5, 2=10, 3+=15
-    5. LUNG INVOLVEMENT (0-10 pts): <25%=0, 25-50%=4, 50-75%=7, >75%=10
-    6. LAB MARKERS (0-10 pts): CRP>100 adds 5pts, D-dimer>1.0 adds 5pts
-
-    Tiers: 0-25=LOW_RISK | 26-50=MODERATE_RISK | 51-75=HIGH_RISK | 76-100=CRITICAL
-
-    Produce per-patient scores with explanations and a full population summary.
-
-    --- MODE B: GOOGLE_COVID_POPULATION_DATA ---
-    If data_mode is GOOGLE_COVID_POPULATION_DATA (no patient CSV available), perform population-level risk inference using the Google COVID hospitalization data from context:
-
-    Use the hospitalization benchmarks:
-    - current_intensive_care_patients → infer CRITICAL tier proportion
-    - current_hospitalized_patients → infer total active caseload
-    - current_ventilator_patients → infer CRITICAL/HIGH tier proportion
-    - hospitalization_trend → determines trajectory
-
-    Apply the following population inference model:
-    - CRITICAL tier = (current_intensive_care_patients / current_hospitalized_patients) × 100 → percentage
-    - HIGH_RISK tier = approximately 2× the CRITICAL percentage (patients approaching ICU threshold)
-    - MODERATE_RISK tier = approximately 35% of hospitalized (standard ward patients)
-    - LOW_RISK tier = remainder
-
-    Set scoring_mode = POPULATION_INFERENCE and clearly note that individual patient IDs are not available.
-    Produce population_summary with estimated counts and percentages.
-    State clearly that this is a population-level estimate, not individual patient scoring.
-
-    SAFETY DISCLAIMER (both modes): These operational risk scores are decision support tools only. All clinical decisions must be made by licensed healthcare professionals.
+    Score and classify patients using the CareFlow Risk Scoring Model. When a patient CSV is available, perform individual patient scoring. When no patient CSV is available, use population-level inference from the Google COVID benchmark data and clearly label the output as an estimate rather than patient-level scoring.
   expected_output: |-
-    A structured JSON-compatible risk scoring report containing:
-    - scoring_model_version ("CareFlow-RSM-v1.0")
-    - scoring_mode (INDIVIDUAL_PATIENT or POPULATION_INFERENCE)
-    - data_mode_used (from ingestion task — PATIENT_LEVEL_CSV or GOOGLE_COVID_POPULATION_DATA)
-    - population_summary (total_scored or total_estimated, count and percentage per tier: LOW_RISK, MODERATE_RISK, HIGH_RISK, CRITICAL)
-    - patient_scores (list of individual scores if Mode A; empty list with explanation note if Mode B)
-    - top_critical_patients (top 10 individual patients if Mode A; empty with note if Mode B)
-    - top_high_risk_patients (top 20 if Mode A; empty with note if Mode B)
-    - population_inference_basis (explanation of how population estimates were derived — only for Mode B)
-    - missing_data_impact (description of data limitations)
-    - safety_disclaimer ("These operational risk scores are decision support tools only. All clinical decisions must be made by licensed healthcare professionals.")
-    - scoring_timestamp (ISO timestamp)
+    A structured JSON-compatible risk scoring report containing population estimates when no patient CSV is available.
   agent: clinical_operations_patient_risk_scoring_specialist
   context:
   - ingest_and_validate_hospital_covid_operational_data
   - gpu_accelerated_hospital_operations_analytics_and_eda
 near_term_hospital_resource_demand_forecasting:
   description: |-
-    Using the analytics summary and risk scoring outputs from previous tasks, generate near-term operational demand forecasts for all critical hospital resources.
-
-    Apply the following CAREFLOW FORECASTING METHODOLOGY:
-
-    INPUTS TO USE:
-    - Current ICU occupancy percentage from analytics task
-    - Current bed occupancy percentage from analytics task
-    - Current ventilator utilization from analytics task
-    - Current oxygen demand count from analytics task
-    - Risk tier distribution from risk scoring task (specifically the count of CRITICAL and HIGH_RISK patients)
-    - Temporal trend direction from analytics task (INCREASING, STABLE, or DECREASING)
-    - REAL BENCHMARKS from Google COVID Open Data (if available): use peak_icu_patients, peak_hospitalized_patients, and peak_ventilator_patients as historical surge benchmarks to calibrate forecast confidence and ceiling estimates
-
-    GOOGLE COVID DATA CALIBRATION:
-    If the live data fetch task returned hospitalization data, use it to:
-    - Set a realistic surge ceiling: peak_icu_patients from real data represents a historically observed maximum
-    - Adjust confidence levels: if current ICU load is approaching historical peak, raise confidence of CRITICAL forecast
-    - Add a google_data_calibration note to each forecast dimension explaining how real data influenced the estimate
-
-    FORECASTING LOGIC:
-
-    1. BED DEMAND FORECAST (next 24h, 48h, 72h):
-       - Baseline: current occupancy rate
-       - Apply trend multiplier: INCREASING adds 8-12% per day, STABLE adds 2-4%, DECREASING subtracts 3-5%
-       - Report forecasted bed count needed and whether capacity will be breached
-
-    2. ICU DEMAND FORECAST (next 24h, 48h, 72h):
-       - Baseline: current ICU patients + expected escalations
-       - Expected escalations = HIGH_RISK patient count x 0.15 escalation probability per day
-       - Apply trend multiplier from temporal trend
-       - Flag if forecasted ICU demand exceeds 80% of capacity (ELEVATED) or 95% (CRITICAL)
-       - If Google COVID peak ICU data available: note what % of historical peak the forecast represents
-
-    3. VENTILATOR DEMAND FORECAST (next 24h, 48h, 72h):
-       - Baseline: current ventilator patients + expected new requirements
-       - Expected new requirements = CRITICAL patient count x 0.25 per day
-       - Flag if demand approaches total ventilator availability
-
-    4. OXYGEN DEMAND FORECAST (next 24h, 48h):
-       - Baseline: current oxygen patients x average oxygen consumption rate (assume 10 cylinders per high-flow patient per day)
-       - Apply trend multiplier
-
-    5. DAILY ADMISSIONS FORECAST (next 3 days):
-       - Baseline: average daily admissions from temporal data
-       - Apply trend multiplier
-
-    Identify the TOP RESOURCE RISK: which resource is most likely to face a shortage in the next 72 hours.
+    Using the analytics summary and risk outputs, generate near-term resource demand forecasts. Calibrate the forecast with Google COVID historical peak values when those benchmarks are available and clearly state that the forecast is operational guidance rather than clinical prediction.
   expected_output: |-
-    A structured JSON-compatible forecast report containing:
-    - forecast_generated_at (ISO timestamp)
+    A structured JSON-compatible forecast report containing the forecast and resource risk notes.
     - forecast_horizon (string: "72 hours")
     - trend_basis (the temporal trend direction used: INCREASING, STABLE, or DECREASING)
     - google_data_calibration_applied (boolean — true if Google COVID benchmark data was used)

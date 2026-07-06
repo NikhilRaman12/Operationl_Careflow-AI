@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: operational-careflow-ai-backend:latest
+    container_name: careflow-backend
+    environment:
+      CAREFLOW_LLM_MODEL: ${CAREFLOW_LLM_MODEL:-gemini/gemini-1.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOCATION_KEY: ${LOCATION_KEY:-US}
+      TOTAL_ICU_CAPACITY: ${TOTAL_ICU_CAPACITY:-50}
+      TOTAL_VENTILATORS: ${TOTAL_VENTILATORS:-20}
+      TOTAL_BED_CAPACITY: ${TOTAL_BED_CAPACITY:-200}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://127.0.0.1:5173}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./outputs:/app/outputs
+      - ./data/cache:/app/data/cache
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+    image: operational-careflow-ai-frontend:latest
+    container_name: careflow-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"

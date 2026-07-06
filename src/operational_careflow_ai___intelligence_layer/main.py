@@ -1,76 +1,76 @@
 #!/usr/bin/env python
+import argparse
+import os
 import sys
+
+from dotenv import load_dotenv
+
 from operational_careflow_ai___intelligence_layer.crew import OperationalCareflowAiIntelligenceLayerCrew
 
-# This main file is intended to be a way for your to run your
-# crew locally, so refrain from adding unnecessary logic into this file.
-# Replace with inputs you want to test with, it will automatically
-# interpolate any tasks and agents information
+load_dotenv()
+
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value in (None, ""):
+        return default
+    return int(raw_value)
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Operational CareFlow AI submission artifact generation.")
+    parser.add_argument("command", nargs="?", default="run", choices=["run", "train", "replay", "test"])
+    parser.add_argument("--location-key", default=os.getenv("LOCATION_KEY", "US"))
+    parser.add_argument("--data-file", default=os.getenv("DATA_FILE_PATH", ""))
+    parser.add_argument("--icu-capacity", type=int, default=_env_int("TOTAL_ICU_CAPACITY", 50))
+    parser.add_argument("--ventilator-capacity", type=int, default=_env_int("TOTAL_VENTILATORS", 20))
+    parser.add_argument("--bed-capacity", type=int, default=_env_int("TOTAL_BED_CAPACITY", 200))
+    return parser.parse_args(argv)
+
+
+def _get_inputs_from_env_and_cli(argv: list[str] | None = None):
+    args = _parse_args(argv)
+
+    return {
+        "location_key": args.location_key,
+        "data_file_path": args.data_file,
+        "total_icu_capacity": args.icu_capacity,
+        "total_ventilators": args.ventilator_capacity,
+        "total_bed_capacity": args.bed_capacity,
+    }
+
+
+def _run_pipeline() -> dict:
+    inputs = _get_inputs_from_env_and_cli()
+    return OperationalCareflowAiIntelligenceLayerCrew().build_submission_artifacts(inputs)
+
 
 def run():
-    """
-    Run the crew.
-    """
-    inputs = {
-        'location_key': 'sample_value',
-        'data_file_path': 'sample_value',
-        'total_icu_capacity': 'sample_value',
-        'total_ventilators': 'sample_value',
-        'total_bed_capacity': 'sample_value'
-    }
-    OperationalCareflowAiIntelligenceLayerCrew().crew().kickoff(inputs=inputs)
+    """Generate the CareFlow submission artifacts with real Google COVID data and GPU benchmarks."""
+    result = _run_pipeline()
+    print(result["summary"])
+    for label, path in result["outputs"].items():
+        print(f"{label}: {path}")
 
 
 def train():
-    """
-    Train the crew for a given number of iterations.
-    """
-    inputs = {
-        'location_key': 'sample_value',
-        'data_file_path': 'sample_value',
-        'total_icu_capacity': 'sample_value',
-        'total_ventilators': 'sample_value',
-        'total_bed_capacity': 'sample_value'
-    }
-    try:
-        OperationalCareflowAiIntelligenceLayerCrew().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
+    """Run the same artifact generation flow for training-style execution."""
+    run()
 
-    except Exception as e:
-        raise Exception(f"An error occurred while training the crew: {e}")
 
 def replay():
-    """
-    Replay the crew execution from a specific task.
-    """
-    try:
-        OperationalCareflowAiIntelligenceLayerCrew().crew().replay(task_id=sys.argv[1])
+    """Replay is not implemented for the artifact-focused workflow."""
+    print("Replay is not required for this submission-ready workflow.")
+    run()
 
-    except Exception as e:
-        raise Exception(f"An error occurred while replaying the crew: {e}")
 
 def test():
-    """
-    Test the crew execution and returns the results.
-    """
-    inputs = {
-        'location_key': 'sample_value',
-        'data_file_path': 'sample_value',
-        'total_icu_capacity': 'sample_value',
-        'total_ventilators': 'sample_value',
-        'total_bed_capacity': 'sample_value'
-    }
-    try:
-        OperationalCareflowAiIntelligenceLayerCrew().crew().test(n_iterations=int(sys.argv[1]), openai_model_name=sys.argv[2], inputs=inputs)
+    """Run the artifact generation flow and return the result payload."""
+    run()
 
-    except Exception as e:
-        raise Exception(f"An error occurred while testing the crew: {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: main.py <command> [<args>]")
-        sys.exit(1)
-
-    command = sys.argv[1]
+    command = _parse_args(sys.argv[1:]).command
     if command == "run":
         run()
     elif command == "train":
