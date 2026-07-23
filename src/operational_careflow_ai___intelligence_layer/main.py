@@ -5,7 +5,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from operational_careflow_ai___intelligence_layer.crew import OperationalCareflowAiIntelligenceLayerCrew
+from operational_careflow_ai___intelligence_layer.agents import OperationalCareflowAiIntelligenceLayerCrew
 
 load_dotenv()
 

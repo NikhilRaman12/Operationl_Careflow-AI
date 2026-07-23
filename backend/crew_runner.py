@@ -12,7 +12,7 @@ OUTPUTS_DIR = ROOT_DIR / "outputs"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from operational_careflow_ai___intelligence_layer.crew import OperationalCareflowAiIntelligenceLayerCrew
+from operational_careflow_ai___intelligence_layer.agents import OperationalCareflowAiIntelligenceLayerCrew
 
 load_dotenv(ROOT_DIR / ".env")
 
@@ -32,3 +32,11 @@ def run_pipeline(inputs: dict[str, Any] | None = None) -> dict[str, Any]:
     if inputs:
         pipeline_inputs.update({key: value for key, value in inputs.items() if value is not None})
     return OperationalCareflowAiIntelligenceLayerCrew().build_submission_artifacts(pipeline_inputs)
+
+
+if __name__ == "__main__":
+    res = run_pipeline()
+    print("Pipeline result summary:", res["summary"])
+    for key, path in res["outputs"].items():
+        print(f"Artifact {key}: {path}")
+

@@ -15,6 +15,7 @@ ARTIFACTS = {
     "google_covid_kpis": OUTPUTS_DIR / "google_covid_kpis.json",
     "gpu_benchmark": OUTPUTS_DIR / "gpu_benchmark.json",
     "executive_report": OUTPUTS_DIR / "executive_report.md",
+    "agent_execution_trace": OUTPUTS_DIR / "agent_execution_trace.json",
 }
 
 MISSING_MESSAGE = "Pipeline has not been run yet. Trigger POST /api/run-pipeline to generate this artifact."
@@ -63,6 +64,11 @@ def get_google_covid_kpis() -> dict[str, Any]:
 @router.get("/api/gpu-benchmark")
 def get_gpu_benchmark() -> dict[str, Any]:
     return _read_json_artifact("gpu_benchmark")
+
+
+@router.get("/api/agents/status")
+def get_agents_status() -> dict[str, Any]:
+    return _read_json_artifact("agent_execution_trace")
 
 
 @router.get("/api/executive-report", response_class=PlainTextResponse)
